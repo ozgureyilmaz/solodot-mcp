@@ -1,0 +1,42 @@
+{
+  "name": "@solodot/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "solodot-mcp": "./dist/stdio.js"
+  },
+  "exports": {
+    ".": "./dist/server.js",
+    "./stdio": "./dist/stdio.js",
+    "./http": "./dist/http.js"
+  },
+  "scripts": {
+    "build": "tsup src/server.ts src/stdio.ts src/http.ts --format esm --platform node --target node20 --clean --dts",
+    "start:http": "node dist/http.js",
+    "dev:stdio": "tsx src/stdio.ts",
+    "dev:http": "tsx src/http.ts",
+    "container:build": "./scripts/apple-container.sh build",
+    "container:run": "./scripts/apple-container.sh run",
+    "container:health": "./scripts/apple-container.sh health",
+    "container:logs": "./scripts/apple-container.sh logs",
+    "container:stop": "./scripts/apple-container.sh stop",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.1.10"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
