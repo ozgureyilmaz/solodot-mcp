@@ -11,5 +11,5 @@ ENV NODE_ENV=production
 COPY --from=build /app/package*.json ./
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
-EXPOSE 8787
-CMD ["node", "dist/http.js"]
+VOLUME ["/var/lib/solodot"]
+CMD ["node", "dist/runtime.js"]

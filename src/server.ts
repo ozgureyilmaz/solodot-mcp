@@ -8,11 +8,9 @@ import {
 import { runDiagnosticHarness } from "./harness/runDiagnostic";
 import {
   packNames,
-  providerOptions,
   type DiagnosticIntake,
   type DiagnosticResult,
   type ExecutionAsset,
-  type HarnessProvider,
 } from "./harness/types";
 import { parseDiagnosticIntake } from "./harness/validation";
 
@@ -22,7 +20,6 @@ const runId = z.string().trim().min(3).max(180);
 const assetId = z.string().trim().min(3).max(180);
 
 const routeInput = z.object({
-  provider: z.enum(providerOptions).optional(),
   founderType: text,
   stage: text,
   offer: text,
@@ -69,8 +66,7 @@ export function createSolodotMcpServer({
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
     async (input) => {
-      const provider = input.provider || defaultProvider();
-      const intake = parseDiagnosticIntake({ ...input, provider });
+      const intake = parseDiagnosticIntake(input);
       const diagnostic = await route(intake);
       await repository.saveDiagnostic(principal, intake, diagnostic);
       const safeDiagnostic = sanitizeDiagnostic(diagnostic, repository.durable);
@@ -243,12 +239,6 @@ function registerResources(server: McpServer) {
       ],
     }),
   );
-}
-
-function defaultProvider(): HarnessProvider {
-  const value = process.env.SOLODOT_DEFAULT_PROVIDER || "anthropic";
-  if (value === "anthropic" || value === "vertex") return value;
-  throw new Error("SOLODOT_DEFAULT_PROVIDER must be anthropic or vertex.");
 }
 
 function sanitizeDiagnostic(diagnostic: DiagnosticResult, durable: boolean) {

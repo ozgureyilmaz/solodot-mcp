@@ -1,7 +1,6 @@
-export const HARNESS_VERSION = "diagnostic-harness-v0.2";
+import type { HarnessRoutingDecision } from "../runtime/routing";
 
-export const providerOptions = ["anthropic", "vertex"] as const;
-export type HarnessProvider = (typeof providerOptions)[number];
+export const HARNESS_VERSION = "diagnostic-harness-v0.2";
 
 export const packNames = [
   "Bottleneck Map",
@@ -41,7 +40,6 @@ export const verificationStatuses = [
 export type VerificationStatus = (typeof verificationStatuses)[number];
 
 export type DiagnosticIntake = {
-  provider: HarnessProvider;
   founderType: string;
   stage: string;
   offer: string;
@@ -56,9 +54,9 @@ export type DiagnosticIntake = {
 
 export type DiagnosticResult = {
   runId: string;
-  provider: HarnessProvider;
   harnessVersion: string;
   createdAt: string;
+  routing: HarnessRoutingDecision;
   storage: RunStorageState;
   diagnosis: {
     primaryBottleneck: string;
@@ -107,7 +105,6 @@ export type RecommendedAction = {
 
 export type RunStorageState = {
   status: "stored" | "not_configured" | "failed";
-  ownerToken?: string;
   message?: string;
 };
 
@@ -174,8 +171,7 @@ export type ToolPreview = {
   payload: string;
 };
 
-export type ProviderCallOptions = {
-  provider: HarnessProvider;
+export type OpenAICallOptions = {
   apiKey: string;
   model: string;
   system: string;
@@ -191,4 +187,5 @@ export type JsonSchema = {
   enum?: readonly string[];
   minimum?: number;
   maximum?: number;
+  additionalProperties?: boolean;
 };

@@ -2,16 +2,15 @@ import {
   HARNESS_VERSION,
   actionTypes,
   packNames,
-  providerOptions,
   riskLevels,
   workflowKeys,
   type DiagnosticIntake,
   type DiagnosticResult,
-  type HarnessProvider,
   type PackName,
   type RecommendedAction,
   type WorkflowKey,
 } from "./types";
+import { routeExecutionPack } from "../runtime/routing";
 
 const MAX_TEXT = 1800;
 const MAX_ACTIONS = 2;
@@ -22,23 +21,10 @@ const unsafeExternalActionPattern =
 const unsafeSystemPattern =
   /\b(email|emails|crm|salesforce|hubspot|stripe|quickbooks|xero|gmail|outlook|calendar|reminder|reminders|notion|linear|jira|slack|website|invoice|invoices|payment|payments)\b/i;
 
-export function isHarnessProvider(value: unknown): value is HarnessProvider {
-  return (
-    typeof value === "string" &&
-    providerOptions.includes(value as HarnessProvider)
-  );
-}
-
 export function parseDiagnosticIntake(input: unknown): DiagnosticIntake {
   const body = asRecord(input);
-  const provider = body.provider;
-
-  if (!isHarnessProvider(provider)) {
-    throw new Error("Provider must be anthropic or vertex.");
-  }
 
   const intake: DiagnosticIntake = {
-    provider,
     founderType: cleanRequired(body.founderType, "Founder type"),
     stage: cleanRequired(body.stage, "Stage"),
     offer: cleanRequired(body.offer, "Current offer or product"),
@@ -56,12 +42,10 @@ export function parseDiagnosticIntake(input: unknown): DiagnosticIntake {
 
 export function normalizeDiagnosticResult({
   raw,
-  provider,
   runId,
   createdAt = new Date().toISOString(),
 }: {
   raw: unknown;
-  provider: HarnessProvider;
   runId: string;
   createdAt?: string;
 }): DiagnosticResult {
@@ -85,9 +69,9 @@ export function normalizeDiagnosticResult({
 
   return {
     runId,
-    provider,
     harnessVersion: HARNESS_VERSION,
     createdAt,
+    routing: routeExecutionPack(workflowKey, readMaxWorkers()),
     storage: {
       status: "not_configured",
       message: "Run persistence has not been attempted.",
@@ -163,9 +147,14 @@ export function safeParseJSON(text: string): unknown {
   } catch (error) {
     const reason = error instanceof Error ? error.message : "Unknown parse error";
     throw new Error(
-      `Provider returned invalid structured JSON (${reason}). Try again, or use the Flash-Lite Vertex model with a shorter intake.`,
+      `OpenAI returned invalid structured JSON (${reason}). Try again with a shorter intake.`,
     );
   }
+}
+
+function readMaxWorkers() {
+  const value = Number.parseInt(process.env.SOLODOT_MAX_WORKERS || "8", 10);
+  return Number.isFinite(value) ? Math.max(1, Math.min(value, 64)) : 8;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

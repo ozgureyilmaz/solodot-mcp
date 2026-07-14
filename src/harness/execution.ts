@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { callStructuredProvider } from "./providers";
-import { getProviderConfig } from "./runDiagnostic";
+import { callStructuredOpenAI } from "./openai";
+import { getOpenAIConfig } from "./runDiagnostic";
 import {
   executionArtifactTypes,
   workflowKeys,
@@ -14,7 +14,7 @@ import {
 const MAX_CONTENT = 8000;
 const MAX_ITEM = 1200;
 
-const executionAssetSchema = {
+export const executionAssetSchema = {
   type: "object",
   required: [
     "artifactType",
@@ -72,12 +72,11 @@ export async function runExecutionHarness({
   diagnostic: DiagnosticResult;
   corrections?: string;
 }): Promise<ExecutionAsset> {
-  const providerConfig = getProviderConfig(diagnostic.provider);
+  const openAIConfig = getOpenAIConfig();
   const { system, user } = buildExecutionPrompt(diagnostic, corrections);
-  const raw = await callStructuredProvider(
+  const raw = await callStructuredOpenAI(
     {
-      provider: diagnostic.provider,
-      ...providerConfig,
+      ...openAIConfig,
       system,
       user,
       schema: executionAssetSchema,
@@ -151,7 +150,7 @@ export function normalizeExecutionAsset({
   const content = cleanText(body.content, MAX_CONTENT);
 
   if (!content) {
-    throw new Error("Execution provider returned an empty asset.");
+    throw new Error("OpenAI returned an empty asset.");
   }
 
   return {

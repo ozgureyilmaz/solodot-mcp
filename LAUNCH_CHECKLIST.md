@@ -1,0 +1,39 @@
+# Solodot Runtime Launch Checklist
+
+This checklist complements the web/auth checklist in the Solodot repository. Keep this pull request in draft until the runtime staging gates are complete. Never commit Supabase service-role credentials, OpenAI secrets, OAuth tokens, or the runtime encryption key.
+
+## Engineering / Codex verification
+
+### Completed locally
+
+- [x] OpenAI-only MCP and runtime contracts.
+- [x] Advisor/Orchestrator routing and configurable worker bounds.
+- [x] Pi-compatible device authorization and strict streamed Responses parsing.
+- [x] Usage-limit and rejected-credential classification.
+- [x] Explicit founder approval before API-key fallback.
+- [x] Encrypted token round-trip, redaction, deletion, and deletion-tombstone behavior.
+- [x] Job claim and lease-renewal repository contracts.
+- [x] TypeScript check, 34 runtime/MCP tests, production bundle, and Compose config.
+- [x] Outbound-only Compose service with no published application port.
+
+### Required staging tests
+
+- [ ] Start the container with production-like secrets and confirm a healthy Supabase heartbeat.
+- [ ] Queue and complete one API-key execution job end to end.
+- [ ] Claim jobs concurrently and prove no duplicate execution.
+- [ ] Restart during active work and prove stale-lease recovery plus idempotent output.
+- [ ] Verify retry exhaustion and terminal failure state.
+- [ ] Verify persistent encrypted token recovery after container restart.
+- [ ] Verify disconnect/account deletion removes the encrypted token file.
+- [ ] Run IPv6 OpenAI and Supabase egress smoke tests on the selected host.
+- [ ] Run a 24-hour stability test and record CPU, memory, egress, retries, and heartbeat gaps.
+- [ ] Test subscription start/poll/refresh/revocation/limit behavior only after policy approval.
+
+## Project owner responsibilities
+
+- [ ] Provide the hosted Supabase URL and service-role key through the runtime secret manager.
+- [ ] Generate and securely back up `SOLODOT_RUNTIME_ENCRYPTION_KEY`.
+- [ ] Choose and provision the runtime host without exposing an application port.
+- [ ] Configure billing alerts and explicitly approve any paid resource.
+- [ ] Keep subscription mode disabled until OpenAI policy/terms review is complete.
+- [ ] Approve production promotion after the staging evidence is attached to the PR.

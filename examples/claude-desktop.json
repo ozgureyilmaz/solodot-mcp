@@ -4,8 +4,8 @@
       "command": "node",
       "args": ["/Users/0x79de/dev/solodot-mcp/dist/stdio.js"],
       "env": {
-        "SOLODOT_DEFAULT_PROVIDER": "anthropic",
-        "ANTHROPIC_API_KEY": "your-key"
+        "OPENAI_API_KEY": "your-key",
+        "OPENAI_MODEL": "gpt-5-mini"
       }
     }
   }
