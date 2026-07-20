@@ -1,25 +1,37 @@
 import type { JsonSchema } from "../harness/types";
 import { callStructuredOpenAI } from "../harness/openai";
-import { callCodexStructured } from "./codexResponses";
-import { refreshCodexCredentials } from "./codexOAuth";
+import {
+  CodexAppServerClient,
+  CodexAuthenticationError,
+  createStdioCodexTransport,
+} from "./codexAppServer";
+import { CodexHomeManager } from "./codexHome";
 import { modelAliasForRole, resolveModelAlias, type AgentRole } from "./modelRouting";
 import {
   RuntimeRepository,
   type RuntimeConnection,
   type RuntimeJob,
 } from "./repository";
-import { EncryptedTokenStore, type CodexCredentials } from "./tokenStore";
+
+const managedCodexQueues = new Map<string, Promise<void>>();
+
+type StructuredCodexClient = Pick<
+  CodexAppServerClient,
+  "initialize" | "readAccount" | "runStructured" | "close"
+>;
 
 export class RuntimeOpenAIGateway {
   private apiKey: string | null = null;
-  private credentials: CodexCredentials | null = null;
 
   constructor(
     private readonly repository: RuntimeRepository,
-    private readonly tokenStore: EncryptedTokenStore,
+    private readonly homeManager: CodexHomeManager,
     private readonly job: RuntimeJob,
     readonly connection: RuntimeConnection,
     private readonly routingReason: string,
+    private readonly createCodexClient: (codexHome: string) => StructuredCodexClient =
+      (codexHome) =>
+        new CodexAppServerClient(createStdioCodexTransport({ codexHome })),
   ) {}
 
   async call({
@@ -38,12 +50,17 @@ export class RuntimeOpenAIGateway {
     outputDescription: string;
   }) {
     const alias = modelAliasForRole(role);
-    const model = resolveModelAlias(alias);
+    const apiModel = resolveModelAlias(alias);
+    const subscriptionModel = process.env.CODEX_SUBSCRIPTION_MODEL || undefined;
+    const resolvedModel =
+      this.connection.auth_mode === "codex_subscription"
+        ? subscriptionModel || "codex-default"
+        : apiModel;
     const stepId = await this.repository.createStep({
       job: this.job,
       role,
       modelAlias: alias,
-      resolvedModel: model,
+      resolvedModel,
       authMode: this.connection.auth_mode,
       routingReason: this.routingReason,
       input: { outputName, system, user },
@@ -54,7 +71,7 @@ export class RuntimeOpenAIGateway {
           ? await callStructuredOpenAI(
               {
                 apiKey: await this.getApiKey(),
-                model,
+                model: apiModel,
                 system,
                 user,
                 schema,
@@ -62,15 +79,14 @@ export class RuntimeOpenAIGateway {
               outputName,
               outputDescription,
             )
-          : await callCodexStructured({
-              credentials: await this.getCodexCredentials(),
-              model,
-              system,
-              user,
-              schema,
-              outputName,
-              outputDescription,
-            });
+          : await serializeManagedCodex(this.connection.id, () =>
+              this.callManagedCodex({
+                model: subscriptionModel,
+                system,
+                user,
+                schema,
+              }),
+            );
       await this.repository.completeStep(stepId, output);
       return output;
     } catch (error) {
@@ -87,18 +103,73 @@ export class RuntimeOpenAIGateway {
     return this.apiKey;
   }
 
-  private async getCodexCredentials() {
-    this.credentials ||= await this.tokenStore.load(this.connection.id);
-    if (!this.credentials) throw new Error("Encrypted Codex credentials are unavailable.");
-    if (this.credentials.expires <= Date.now() + 60_000) {
-      this.credentials = await refreshCodexCredentials(this.credentials.refresh);
-      await this.tokenStore.save(this.connection.id, this.credentials);
+  private async callManagedCodex({
+    model,
+    system,
+    user,
+    schema,
+  }: {
+    model?: string;
+    system: string;
+    user: string;
+    schema: JsonSchema;
+  }) {
+    const home = await this.homeManager.open(this.connection.id);
+    const client = this.createCodexClient(home.path);
+    let closed = false;
+    let discarded = false;
+    try {
+      await client.initialize();
+      const accountResult = await client.readAccount(true);
+      const account = accountResult.account as Record<string, unknown> | undefined;
+      if (!account || account.type !== "chatgpt") {
+        throw new CodexAuthenticationError(
+          "The encrypted Codex cache no longer contains a managed ChatGPT login.",
+        );
+      }
+      const output = await client.runStructured({
+        model,
+        system,
+        user,
+        schema,
+        cwd: home.workspacePath,
+      });
+      await client.close();
+      closed = true;
+      await home.persistAndDiscard();
+      discarded = true;
       await this.repository.updateConnection(this.connection.id, {
         status: "connected",
-        expires_at: new Date(this.credentials.expires).toISOString(),
         last_checked_at: new Date().toISOString(),
+        last_error_code: null,
+        last_error_message: null,
       });
+      return output;
+    } finally {
+      if (!closed) await client.close().catch(() => undefined);
+      if (!discarded) {
+        await home.persistAndDiscard().catch(() => home.discard());
+      }
     }
-    return this.credentials;
+  }
+}
+
+async function serializeManagedCodex<T>(
+  connectionId: string,
+  operation: () => Promise<T>,
+) {
+  const previous = managedCodexQueues.get(connectionId) || Promise.resolve();
+  const current = previous.catch(() => undefined).then(operation);
+  const settled = current.then(
+    () => undefined,
+    () => undefined,
+  );
+  managedCodexQueues.set(connectionId, settled);
+  try {
+    return await current;
+  } finally {
+    if (managedCodexQueues.get(connectionId) === settled) {
+      managedCodexQueues.delete(connectionId);
+    }
   }
 }

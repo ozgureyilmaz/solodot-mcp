@@ -15,11 +15,11 @@ The default container command starts the runtime and opens no inbound applicatio
 ## OpenAI connections
 
 - API-key mode uses the official OpenAI Responses API.
-- Codex subscription mode ports the Pi-compatible OpenAI public-client device flow and subscription Responses contract from `@earendil-works/pi-ai@0.80.6`.
+- Codex subscription mode uses OpenAI's official `codex app-server` managed `chatgptDeviceCode` login and structured turn protocol.
 - Both may coexist per workspace.
 - Subscription exhaustion pauses the job. API-key continuation requires a separate founder approval and is never silent.
 
-See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for pinned sources and MIT attribution.
+The app-server owns token refresh. Solodot materializes its credential cache only in a private temporary `CODEX_HOME`, encrypts that cache with AES-256-GCM before persistence, and disables shell, exec, browser, app, plugin, MCP-install, multi-agent, history, and web-search capabilities for product turns.
 
 ## Adaptive harness
 
@@ -67,6 +67,9 @@ SOLODOT_RUNTIME_ENCRYPTION_KEY=... # 32 bytes, base64 or hex
 SOLODOT_RUNTIME_TOKEN_DIR=/var/lib/solodot/tokens
 SOLODOT_RUNTIME_CONCURRENCY=8
 SOLODOT_MAX_WORKERS=8
+CODEX_BINARY=/app/node_modules/.bin/codex
+# Optional. Empty uses the subscription account's default Codex model.
+CODEX_SUBSCRIPTION_MODEL=
 ```
 
 Run directly:

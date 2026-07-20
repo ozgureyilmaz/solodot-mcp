@@ -28,6 +28,48 @@ describe("RuntimeRepository leases", () => {
     });
   });
 
+  it("claims queued app-server logins through the atomic auth RPC", async () => {
+    const rpc = vi.fn(async () => ({ data: [{ id: "attempt-1" }], error: null }));
+    const repository = new RuntimeRepository({ rpc } as never);
+    await expect(
+      repository.claimAuthAttempts("runtime-1", 2, 60),
+    ).resolves.toEqual([{ id: "attempt-1" }]);
+    expect(rpc).toHaveBeenCalledWith("claim_solodot_openai_auth_attempts", {
+      p_runtime_id: "runtime-1",
+      p_limit: 2,
+      p_lease_seconds: 60,
+    });
+  });
+
+  it("renews app-server login ownership through the auth lease RPC", async () => {
+    const rpc = vi.fn(async () => ({ data: true, error: null }));
+    const repository = new RuntimeRepository({ rpc } as never);
+    await expect(
+      repository.renewAuthAttemptLease("attempt-1", "runtime-1", 60),
+    ).resolves.toBe(true);
+    expect(rpc).toHaveBeenCalledWith(
+      "renew_solodot_openai_auth_attempt_lease",
+      {
+        p_attempt_id: "attempt-1",
+        p_runtime_id: "runtime-1",
+        p_lease_seconds: 60,
+      },
+    );
+  });
+
+  it("reads an auth-attempt status without selecting login identifiers", async () => {
+    const maybeSingle = vi.fn(async () => ({ data: { status: "cancelled" }, error: null }));
+    const eq = vi.fn(() => ({ maybeSingle }));
+    const select = vi.fn(() => ({ eq }));
+    const from = vi.fn(() => ({ select }));
+    const repository = new RuntimeRepository({ from } as never);
+
+    await expect(repository.getAuthAttemptStatus("attempt-1")).resolves.toBe(
+      "cancelled",
+    );
+    expect(select).toHaveBeenCalledWith("status");
+  });
+
   it("lists pending encrypted-token deletions for the runtime", async () => {
     const limit = vi.fn(async () => ({
       data: [{ connection_id: "connection-1" }],
@@ -61,8 +103,8 @@ describe("RuntimeRepository leases", () => {
 
   it("expires stale pending device authorization attempts", async () => {
     const lt = vi.fn(async () => ({ error: null }));
-    const eq = vi.fn(() => ({ lt }));
-    const update = vi.fn(() => ({ eq }));
+    const inStatuses = vi.fn(() => ({ lt }));
+    const update = vi.fn(() => ({ in: inStatuses }));
     const from = vi.fn(() => ({ update }));
     const repository = new RuntimeRepository({ from } as never);
 
@@ -73,7 +115,11 @@ describe("RuntimeRepository leases", () => {
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({ status: "expired" }),
     );
-    expect(eq).toHaveBeenCalledWith("status", "pending");
+    expect(inStatuses).toHaveBeenCalledWith("status", [
+      "queued",
+      "starting",
+      "pending",
+    ]);
     expect(lt).toHaveBeenCalledWith(
       "expires_at",
       "2026-07-14T10:00:00.000Z",

@@ -33,10 +33,12 @@ export type PendingAuthAttempt = {
   id: string;
   workspace_id: string;
   connection_id: string;
-  device_auth_id: string;
-  user_code: string;
+  device_auth_id: string | null;
+  user_code: string | null;
   poll_interval_seconds: number;
   expires_at: string;
+  runtime_id: string;
+  lease_expires_at: string;
 };
 
 export type RuntimeTokenDeletion = {
@@ -61,6 +63,36 @@ export class RuntimeRepository {
       "renew_solodot_agent_job_lease",
       {
         p_job_id: jobId,
+        p_runtime_id: runtimeId,
+        p_lease_seconds: leaseSeconds,
+      },
+    );
+    if (error) throw error;
+    return data === true;
+  }
+
+  async claimAuthAttempts(runtimeId: string, limit: number, leaseSeconds: number) {
+    const { data, error } = await this.client.rpc(
+      "claim_solodot_openai_auth_attempts",
+      {
+        p_runtime_id: runtimeId,
+        p_limit: limit,
+        p_lease_seconds: leaseSeconds,
+      },
+    );
+    if (error) throw error;
+    return (data || []) as PendingAuthAttempt[];
+  }
+
+  async renewAuthAttemptLease(
+    attemptId: string,
+    runtimeId: string,
+    leaseSeconds: number,
+  ) {
+    const { data, error } = await this.client.rpc(
+      "renew_solodot_openai_auth_attempt_lease",
+      {
+        p_attempt_id: attemptId,
         p_runtime_id: runtimeId,
         p_lease_seconds: leaseSeconds,
       },
@@ -156,11 +188,21 @@ export class RuntimeRepository {
     if (error) throw error;
   }
 
+  async getAuthAttemptStatus(attemptId: string) {
+    const { data, error } = await this.client
+      .from("solodot_openai_auth_attempts")
+      .select("status")
+      .eq("id", attemptId)
+      .maybeSingle();
+    if (error) throw error;
+    return typeof data?.status === "string" ? data.status : null;
+  }
+
   async expirePendingAuthAttempts(now = new Date().toISOString()) {
     const { error } = await this.client
       .from("solodot_openai_auth_attempts")
       .update({ status: "expired", updated_at: now })
-      .eq("status", "pending")
+      .in("status", ["queued", "starting", "pending"])
       .lt("expires_at", now);
     if (error) throw error;
   }

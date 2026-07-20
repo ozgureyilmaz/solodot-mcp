@@ -1,6 +1,9 @@
 import type { DiagnosticResult } from "../harness/types";
-import { CodexAuthenticationError } from "./codexOAuth";
-import { CodexUsageLimitError } from "./codexResponses";
+import {
+  CodexAuthenticationError,
+  CodexUsageLimitError,
+} from "./codexAppServer";
+import { CodexHomeManager } from "./codexHome";
 import { selectOpenAIConnection, type OpenAIAuthMode } from "./connectionSelection";
 import { RuntimeOpenAIGateway } from "./gateway";
 import { runAdaptiveExecution } from "./orchestration";
@@ -9,13 +12,26 @@ import {
   type RuntimeConnection,
   type RuntimeJob,
 } from "./repository";
-import { EncryptedTokenStore } from "./tokenStore";
 
 export class RuntimeJobProcessor {
   constructor(
     private readonly repository: RuntimeRepository,
-    private readonly tokenStore: EncryptedTokenStore,
+    private readonly homeManager: CodexHomeManager,
     private readonly maxWorkers: number,
+    private readonly gatewayFactory: (args: {
+      repository: RuntimeRepository;
+      homeManager: CodexHomeManager;
+      job: RuntimeJob;
+      connection: RuntimeConnection;
+      routingReason: string;
+    }) => RuntimeOpenAIGateway = (args) =>
+      new RuntimeOpenAIGateway(
+        args.repository,
+        args.homeManager,
+        args.job,
+        args.connection,
+        args.routingReason,
+      ),
   ) {}
 
   async process(job: RuntimeJob) {
@@ -49,13 +65,13 @@ export class RuntimeJobProcessor {
       const diagnostic = readDiagnostic(job.payload);
       const routingReason =
         diagnostic.routing?.reason || "Runtime selected the efficient harness from the execution pack.";
-      const gateway = new RuntimeOpenAIGateway(
-        this.repository,
-        this.tokenStore,
+      const gateway = this.gatewayFactory({
+        repository: this.repository,
+        homeManager: this.homeManager,
         job,
         connection,
         routingReason,
-      );
+      });
       const result = await runAdaptiveExecution({
         diagnostic,
         workflowKey: job.workflow_key,

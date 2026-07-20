@@ -30,11 +30,6 @@ Copyright (c) 2026 Ozgur Yilmaz
 
 The MIT terms above apply.
 
-## Pi OpenAI Codex client
+## OpenAI Codex CLI
 
-- Package: `@earendil-works/pi-ai@0.80.6`
-- Source: `https://github.com/earendil-works/pi/tree/main/packages/ai`
-- Adapted files: the OpenAI Codex public-client device authorization flow and the subscription Responses request contract.
-- Solodot changes: only OpenAI code is retained, credentials are encrypted with AES-256-GCM, the request originator identifies `solodot`, and API-key fallback requires explicit founder approval.
-
-The package is distributed under the MIT License. Copyright remains with its respective authors and contributors. The same MIT grant and warranty disclaimer printed above apply.
+Solodot installs the official `@openai/codex@0.144.4` package and communicates with its documented app-server protocol. No OAuth client identifier, token endpoint implementation, or private Responses transport is copied into Solodot. The package is published under Apache-2.0; its source and license are maintained at `https://github.com/openai/codex`.

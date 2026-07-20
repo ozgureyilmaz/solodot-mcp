@@ -1,25 +1,56 @@
 import {
-  exchangeCodexAuthorizationCode,
-  pollCodexDeviceAuthorization,
-} from "./codexOAuth";
+  CodexAppServerClient,
+  createStdioCodexTransport,
+} from "./codexAppServer";
+import { CodexHomeManager } from "./codexHome";
 import { RuntimeRepository, type PendingAuthAttempt } from "./repository";
 import { EncryptedTokenStore } from "./tokenStore";
 
-export class DeviceAuthWorker {
-  private readonly nextPollAt = new Map<string, number>();
+type AuthClient = Pick<
+  CodexAppServerClient,
+  | "initialize"
+  | "startChatGPTDeviceLogin"
+  | "waitForLogin"
+  | "readAccount"
+  | "cancelLogin"
+  | "close"
+>;
 
-  constructor(
-    private readonly repository: RuntimeRepository,
-    private readonly tokenStore: EncryptedTokenStore,
-  ) {}
+type AuthWorkerOptions = {
+  repository: RuntimeRepository;
+  tokenStore: EncryptedTokenStore;
+  homeManager: CodexHomeManager;
+  runtimeId: string;
+  createClient?: (codexHome: string) => AuthClient;
+  statusPollMilliseconds?: number;
+  capacity?: number;
+  leaseSeconds?: number;
+};
+
+export class DeviceAuthWorker {
+  private readonly active = new Map<string, Promise<void>>();
+  private readonly createClient: (codexHome: string) => AuthClient;
+  private readonly statusPollMilliseconds: number;
+  private readonly capacity: number;
+  private readonly leaseSeconds: number;
+
+  constructor(private readonly options: AuthWorkerOptions) {
+    this.createClient =
+      options.createClient ||
+      ((codexHome) =>
+        new CodexAppServerClient(createStdioCodexTransport({ codexHome })));
+    this.statusPollMilliseconds = options.statusPollMilliseconds || 2_000;
+    this.capacity = options.capacity || 4;
+    this.leaseSeconds = options.leaseSeconds || 60;
+  }
 
   async tick() {
-    await this.repository.expirePendingAuthAttempts();
-    const deletions = await this.repository.listTokenDeletionRequests();
+    await this.options.repository.expirePendingAuthAttempts();
+    const deletions = await this.options.repository.listTokenDeletionRequests();
     const cleanupResults = await Promise.allSettled(
       deletions.map(async ({ connection_id: connectionId }) => {
-        await this.tokenStore.delete(connectionId);
-        await this.repository.completeTokenDeletion(connectionId);
+        await this.options.tokenStore.delete(connectionId);
+        await this.options.repository.completeTokenDeletion(connectionId);
       }),
     );
     for (const result of cleanupResults) {
@@ -34,60 +65,141 @@ export class DeviceAuthWorker {
       }
     }
 
-    const attempts = await this.repository.listPendingAuthAttempts();
-    await Promise.all(attempts.map((attempt) => this.poll(attempt)));
+    const available = Math.max(0, this.capacity - this.active.size);
+    if (!available) return;
+    const attempts = await this.options.repository.claimAuthAttempts(
+      this.options.runtimeId,
+      available,
+      this.leaseSeconds,
+    );
+    for (const attempt of attempts) {
+      if (this.active.has(attempt.id)) continue;
+      const work = this.process(attempt).finally(() => this.active.delete(attempt.id));
+      this.active.set(attempt.id, work);
+    }
   }
 
-  private async poll(attempt: PendingAuthAttempt) {
-    if ((this.nextPollAt.get(attempt.id) || 0) > Date.now()) return;
-    const interval = Math.max(1, attempt.poll_interval_seconds);
-    this.nextPollAt.set(attempt.id, Date.now() + interval * 1000);
+  async drain() {
+    await Promise.allSettled([...this.active.values()]);
+  }
 
+  private async process(attempt: PendingAuthAttempt) {
+    let home: Awaited<ReturnType<CodexHomeManager["open"]>> | null = null;
+    let client: AuthClient | null = null;
+    let persisted = false;
+    let closed = false;
+    let monitoring = true;
     try {
-      const result = await pollCodexDeviceAuthorization({
-        deviceAuthId: attempt.device_auth_id,
-        userCode: attempt.user_code,
+      home = await this.options.homeManager.open(attempt.connection_id);
+      client = this.createClient(home.path);
+      await client.initialize();
+      const login = await client.startChatGPTDeviceLogin();
+      await this.options.repository.updateAuthAttempt(attempt.id, {
+        status: "pending",
+        device_auth_id: login.loginId,
+        user_code: login.userCode,
+        verification_uri: login.verificationUrl,
+        poll_interval_seconds: Math.max(1, Math.ceil(this.statusPollMilliseconds / 1_000)),
+        lease_expires_at: new Date(
+          Date.now() + this.leaseSeconds * 1_000,
+        ).toISOString(),
       });
-      if (result.status === "pending") return;
-      if (result.status === "slow_down") {
-        const slower = interval + 5;
-        this.nextPollAt.set(attempt.id, Date.now() + slower * 1000);
-        await this.repository.updateAuthAttempt(attempt.id, {
-          poll_interval_seconds: slower,
-        });
+
+      const loginOutcome = client
+        .waitForLogin(login.loginId, Math.max(1, Date.parse(attempt.expires_at) - Date.now()))
+        .then(() => ({ kind: "connected" as const }))
+        .catch((error) => ({ kind: "error" as const, error }));
+      const statusOutcome = this.monitorAttempt(attempt.id, () => monitoring);
+      const outcome = await Promise.race([loginOutcome, statusOutcome]);
+      monitoring = false;
+
+      if (outcome.kind === "cancelled" || outcome.kind === "expired" || outcome.kind === "lease_lost") {
+        await client.cancelLogin(login.loginId).catch(() => undefined);
         return;
       }
+      if (outcome.kind === "error") throw outcome.error;
 
-      const credentials = await exchangeCodexAuthorizationCode(
-        result.authorizationCode,
-        result.codeVerifier,
-      );
-      await this.tokenStore.save(attempt.connection_id, credentials);
-      await this.repository.updateConnection(attempt.connection_id, {
+      const accountResult = await client.readAccount(true);
+      const account = accountResult.account as Record<string, unknown> | undefined;
+      if (!account || account.type !== "chatgpt") {
+        throw new Error("Codex app-server did not return a managed ChatGPT account.");
+      }
+      await client.close();
+      closed = true;
+      await home.persistAndDiscard();
+      persisted = true;
+
+      const email = typeof account.email === "string" ? account.email : "ChatGPT account";
+      const plan = typeof account.planType === "string" ? account.planType : "subscription";
+      await this.options.repository.updateConnection(attempt.connection_id, {
         status: "connected",
         secret_ref: `runtime:${attempt.connection_id}`,
-        account_label: `OpenAI account ${credentials.accountId.slice(-6)}`,
-        expires_at: new Date(credentials.expires).toISOString(),
+        account_label: `${email} · ${plan}`,
+        expires_at: null,
         last_checked_at: new Date().toISOString(),
         last_error_code: null,
         last_error_message: null,
       });
-      await this.repository.updateAuthAttempt(attempt.id, {
+      await this.options.repository.updateAuthAttempt(attempt.id, {
         status: "authorized",
         device_auth_id: null,
-        updated_at: new Date().toISOString(),
+        user_code: null,
+        runtime_id: null,
+        lease_expires_at: null,
       });
-      this.nextPollAt.delete(attempt.id);
     } catch (error) {
-      await this.repository.updateAuthAttempt(attempt.id, {
-        status: "error",
-      });
-      await this.repository.updateConnection(attempt.connection_id, {
-        status: "error",
-        last_error_code: error instanceof Error ? error.name : "DEVICE_AUTH_ERROR",
-        last_error_message: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
-      });
-      this.nextPollAt.delete(attempt.id);
+      monitoring = false;
+      const status = await this.options.repository
+        .getAuthAttemptStatus(attempt.id)
+        .catch(() => null);
+      if (!status || !["cancelled", "expired"].includes(status)) {
+        await this.options.repository.updateAuthAttempt(attempt.id, {
+          status: "error",
+          runtime_id: null,
+          lease_expires_at: null,
+        });
+        await this.options.repository.updateConnection(attempt.connection_id, {
+          status: "error",
+          last_error_code:
+            error instanceof Error ? error.name : "CODEX_APP_SERVER_AUTH_ERROR",
+          last_error_message:
+            error instanceof Error
+              ? error.message.slice(0, 500)
+              : String(error).slice(0, 500),
+        });
+      }
+    } finally {
+      monitoring = false;
+      if (client && !closed) await client.close().catch(() => undefined);
+      if (home && !persisted) await home.discard();
     }
   }
+
+  private async monitorAttempt(
+    attemptId: string,
+    shouldContinue: () => boolean,
+  ): Promise<
+    | { kind: "cancelled" }
+    | { kind: "expired" }
+    | { kind: "lease_lost" }
+  > {
+    while (shouldContinue()) {
+      await delay(this.statusPollMilliseconds);
+      if (!shouldContinue()) break;
+      const renewed = await this.options.repository.renewAuthAttemptLease(
+        attemptId,
+        this.options.runtimeId,
+        this.leaseSeconds,
+      );
+      if (!renewed) return { kind: "lease_lost" };
+      const status = await this.options.repository.getAuthAttemptStatus(attemptId);
+      if (status === "cancelled") return { kind: "cancelled" };
+      if (status === "expired") return { kind: "expired" };
+    }
+    return { kind: "lease_lost" };
+  }
+}
+
+function delay(milliseconds: number) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

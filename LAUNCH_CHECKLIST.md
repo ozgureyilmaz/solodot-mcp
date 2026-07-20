@@ -8,12 +8,13 @@ This checklist complements the web/auth checklist in the Solodot repository. Kee
 
 - [x] OpenAI-only MCP and runtime contracts.
 - [x] Advisor/Orchestrator routing and configurable worker bounds.
-- [x] Pi-compatible device authorization and strict streamed Responses parsing.
+- [x] Official Codex app-server device authorization and structured-turn parsing.
 - [x] Usage-limit and rejected-credential classification.
 - [x] Explicit founder approval before API-key fallback.
 - [x] Encrypted token round-trip, redaction, deletion, and deletion-tombstone behavior.
 - [x] Job claim and lease-renewal repository contracts.
-- [x] TypeScript check, 34 runtime/MCP tests, production bundle, and Compose config.
+- [x] TypeScript check, 42 runtime/MCP tests, production bundle, and Compose config.
+- [x] Real app-server protocol handshake and strict security-config validation.
 - [x] Outbound-only Compose service with no published application port.
 
 ### Required staging tests
@@ -27,7 +28,7 @@ This checklist complements the web/auth checklist in the Solodot repository. Kee
 - [ ] Verify disconnect/account deletion removes the encrypted token file.
 - [ ] Run IPv6 OpenAI and Supabase egress smoke tests on the selected host.
 - [ ] Run a 24-hour stability test and record CPU, memory, egress, retries, and heartbeat gaps.
-- [ ] Test subscription start/poll/refresh/revocation/limit behavior only after policy approval.
+- [ ] Test subscription start/poll/refresh/revocation/limit behavior in preview.
 
 ## Project owner responsibilities
 
@@ -35,5 +36,5 @@ This checklist complements the web/auth checklist in the Solodot repository. Kee
 - [ ] Generate and securely back up `SOLODOT_RUNTIME_ENCRYPTION_KEY`.
 - [ ] Choose and provision the runtime host without exposing an application port.
 - [ ] Configure billing alerts and explicitly approve any paid resource.
-- [ ] Keep subscription mode disabled until OpenAI policy/terms review is complete.
+- [ ] Keep production subscription mode disabled until preview evidence is complete.
 - [ ] Approve production promotion after the staging evidence is attached to the PR.

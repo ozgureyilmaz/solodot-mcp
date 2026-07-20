@@ -1,19 +1,10 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { CodexAuthenticationError } from "../src/runtime/codexAppServer";
 import { RuntimeJobProcessor } from "../src/runtime/processor";
 import { diagnostic } from "./fixtures";
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
-
 describe("RuntimeJobProcessor subscription recovery", () => {
   it("pauses for founder approval when revoked subscription credentials have an API fallback", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        new Response('{"error":"invalid_grant"}', { status: 400 }),
-      ),
-    );
     const subscription = {
       id: "subscription-1",
       workspace_id: "workspace-1",
@@ -42,15 +33,6 @@ describe("RuntimeJobProcessor subscription recovery", () => {
       pauseForProviderApproval: vi.fn(async () => undefined),
       failJob: vi.fn(async () => undefined),
     };
-    const tokenStore = {
-      load: vi.fn(async () => ({
-        access: "expired-access",
-        refresh: "revoked-refresh",
-        expires: Date.now() - 1,
-        accountId: "account-1",
-      })),
-      save: vi.fn(async () => undefined),
-    };
     const job = {
       id: "job-1",
       workspace_id: "workspace-1",
@@ -67,8 +49,14 @@ describe("RuntimeJobProcessor subscription recovery", () => {
 
     const processor = new RuntimeJobProcessor(
       repository as never,
-      tokenStore as never,
+      {} as never,
       8,
+      () => ({
+        call: vi.fn(async () => {
+          throw new CodexAuthenticationError("ChatGPT login was revoked.");
+        }),
+        connection: subscription,
+      }) as never,
     );
 
     await expect(processor.process(job)).resolves.toEqual({

@@ -19,10 +19,7 @@ describe("EncryptedTokenStore", () => {
       encryptionKey: Buffer.alloc(32, 7).toString("base64"),
     });
     const credentials = {
-      access: "access-secret",
-      refresh: "refresh-secret",
-      expires: Date.now() + 60_000,
-      accountId: "account-1",
+      authJson: '{"tokens":{"access_token":"access-secret","refresh_token":"refresh-secret"}}',
     };
 
     await store.save("connection-1", credentials);
@@ -46,10 +43,7 @@ describe("EncryptedTokenStore", () => {
       encryptionKey: Buffer.alloc(32, 7).toString("base64"),
     });
     await store.save("connection-1", {
-      access: "access-secret",
-      refresh: "refresh-secret",
-      expires: Date.now() + 60_000,
-      accountId: "account-1",
+      authJson: '{"tokens":{"access_token":"access-secret","refresh_token":"refresh-secret"}}',
     });
 
     await store.delete("connection-1");

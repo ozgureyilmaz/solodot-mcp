@@ -2,11 +2,8 @@ import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from "node:
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-export type CodexCredentials = {
-  access: string;
-  refresh: string;
-  expires: number;
-  accountId: string;
+export type CodexAuthCache = {
+  authJson: string;
 };
 
 type EncryptedEnvelope = {
@@ -26,7 +23,7 @@ export class EncryptedTokenStore {
     this.key = decodeKey(options.encryptionKey);
   }
 
-  async save(connectionId: string, credentials: CodexCredentials) {
+  async save(connectionId: string, credentials: CodexAuthCache) {
     const path = this.pathFor(connectionId);
     await mkdir(this.options.directory, { recursive: true, mode: 0o700 });
     const iv = randomBytes(12);
@@ -48,7 +45,7 @@ export class EncryptedTokenStore {
     await rename(temporary, path);
   }
 
-  async load(connectionId: string): Promise<CodexCredentials | null> {
+  async load(connectionId: string): Promise<CodexAuthCache | null> {
     let raw: string;
     try {
       raw = await readFile(this.pathFor(connectionId), "utf8");
@@ -71,7 +68,7 @@ export class EncryptedTokenStore {
       decipher.update(Buffer.from(envelope.ciphertext, "base64")),
       decipher.final(),
     ]);
-    return JSON.parse(plaintext.toString("utf8")) as CodexCredentials;
+    return JSON.parse(plaintext.toString("utf8")) as CodexAuthCache;
   }
 
   async delete(connectionId: string) {

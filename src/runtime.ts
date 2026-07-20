@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { randomUUID } from "node:crypto";
 import { DeviceAuthWorker } from "./runtime/authWorker";
+import { CodexHomeManager } from "./runtime/codexHome";
 import { RuntimeJobProcessor } from "./runtime/processor";
 import { createRuntimeRepositoryFromEnv, type RuntimeJob } from "./runtime/repository";
 import { EncryptedTokenStore } from "./runtime/tokenStore";
@@ -17,8 +18,14 @@ if (!encryptionKey) throw new Error("SOLODOT_RUNTIME_ENCRYPTION_KEY is required.
 
 const repository = createRuntimeRepositoryFromEnv();
 const tokenStore = new EncryptedTokenStore({ directory: tokenDirectory, encryptionKey });
-const authWorker = new DeviceAuthWorker(repository, tokenStore);
-const processor = new RuntimeJobProcessor(repository, tokenStore, maxWorkers);
+const homeManager = new CodexHomeManager(tokenStore);
+const authWorker = new DeviceAuthWorker({
+  repository,
+  tokenStore,
+  homeManager,
+  runtimeId,
+});
+const processor = new RuntimeJobProcessor(repository, homeManager, maxWorkers);
 const active = new Map<string, Promise<unknown>>();
 let draining = false;
 let lastHeartbeat = 0;
