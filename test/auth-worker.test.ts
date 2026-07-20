@@ -171,4 +171,60 @@ describe("DeviceAuthWorker official app-server flow", () => {
       }),
     );
   });
+
+  it("cancels an active app-server login while draining", async () => {
+    let allowRepositoryCancellation = false;
+    let completeLogin: (() => void) | undefined;
+    const repository = {
+      expirePendingAuthAttempts: vi.fn(async () => undefined),
+      listTokenDeletionRequests: vi.fn(async () => []),
+      claimAuthAttempts: vi.fn(async () => [attempt]),
+      updateAuthAttempt: vi.fn(async () => undefined),
+      updateConnection: vi.fn(async () => undefined),
+      renewAuthAttemptLease: vi.fn(async () => true),
+      getAuthAttemptStatus: vi.fn(async () =>
+        allowRepositoryCancellation ? "cancelled" : "pending",
+      ),
+    };
+    const home = {
+      path: "/tmp/codex-home",
+      persistAndDiscard: vi.fn(async () => undefined),
+      discard: vi.fn(async () => undefined),
+    };
+    const client = {
+      initialize: vi.fn(async () => undefined),
+      startChatGPTDeviceLogin: vi.fn(async () => ({
+        loginId: "login-1",
+        verificationUrl: "https://auth.openai.com/codex/device",
+        userCode: "ABCD-1234",
+      })),
+      waitForLogin: vi.fn(
+        () => new Promise<void>((resolve) => { completeLogin = resolve; }),
+      ),
+      readAccount: vi.fn(),
+      cancelLogin: vi.fn(async () => { completeLogin?.(); }),
+      close: vi.fn(async () => undefined),
+    };
+    const worker = new DeviceAuthWorker({
+      repository: repository as never,
+      tokenStore: { delete: vi.fn() } as never,
+      homeManager: { open: vi.fn(async () => home) } as never,
+      runtimeId: "runtime-1",
+      createClient: () => client as never,
+      statusPollMilliseconds: 1,
+    });
+
+    await worker.tick();
+    const drain = worker.drain();
+    const outcome = await Promise.race([
+      drain.then(() => "drained" as const),
+      new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 25)),
+    ]);
+
+    allowRepositoryCancellation = true;
+    await worker.drain();
+    expect(outcome).toBe("drained");
+    expect(client.cancelLogin).toHaveBeenCalledWith("login-1");
+    expect(home.discard).toHaveBeenCalledOnce();
+  });
 });

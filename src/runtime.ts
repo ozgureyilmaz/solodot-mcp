@@ -78,6 +78,7 @@ await repository.heartbeat({
   activeJobCount: active.size,
   capacity,
 });
+await authWorker.drain();
 await Promise.allSettled(active.values());
 await repository.heartbeat({
   runtimeId,

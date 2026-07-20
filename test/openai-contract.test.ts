@@ -33,4 +33,10 @@ describe("OpenAI-only public contract", () => {
     expect(sources).toContain('"app-server"');
     expect(sources).toContain("chatgptDeviceCode");
   });
+
+  it("drains active device authorization before the runtime stops", async () => {
+    const runtimeEntry = await readFile(path.resolve("src/runtime.ts"), "utf8");
+
+    expect(runtimeEntry).toContain("await authWorker.drain();");
+  });
 });

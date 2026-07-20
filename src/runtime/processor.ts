@@ -92,23 +92,33 @@ export class RuntimeJobProcessor {
             ? "revoked"
             : null;
       if (subscriptionStatus && connection?.auth_mode === "codex_subscription") {
-        await this.repository.updateConnection(connection.id, {
-          status: subscriptionStatus,
-          last_error_code:
-            error instanceof Error ? error.name : "CODEX_SUBSCRIPTION_ERROR",
-          last_error_message:
-            error instanceof Error
-              ? error.message.slice(0, 500)
-              : String(error).slice(0, 500),
-          last_checked_at: new Date().toISOString(),
-        });
-        const context = await this.repository.getWorkspaceConnections(job.workspace_id);
-        const apiKeyReady = context.connections.some(
-          (candidate) => candidate.auth_mode === "api_key" && candidate.status === "connected",
-        );
-        if (apiKeyReady) {
-          await this.repository.pauseForProviderApproval(job, "api_key");
-          return { status: "waiting_for_provider_approval" as const };
+        try {
+          await this.repository.updateConnection(connection.id, {
+            status: subscriptionStatus,
+            last_error_code:
+              error instanceof Error ? error.name : "CODEX_SUBSCRIPTION_ERROR",
+            last_error_message:
+              error instanceof Error
+                ? error.message.slice(0, 500)
+                : String(error).slice(0, 500),
+            last_checked_at: new Date().toISOString(),
+          });
+          const context = await this.repository.getWorkspaceConnections(job.workspace_id);
+          const apiKeyReady = context.connections.some(
+            (candidate) => candidate.auth_mode === "api_key" && candidate.status === "connected",
+          );
+          if (apiKeyReady) {
+            await this.repository.pauseForProviderApproval(job, "api_key");
+            return { status: "waiting_for_provider_approval" as const };
+          }
+        } catch (recoveryError) {
+          process.stderr.write(
+            `Runtime could not persist subscription recovery for job ${job.id}: ${
+              recoveryError instanceof Error
+                ? recoveryError.message
+                : String(recoveryError)
+            }\n`,
+          );
         }
       }
       await this.repository.failJob(job, error);

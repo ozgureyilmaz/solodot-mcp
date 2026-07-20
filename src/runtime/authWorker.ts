@@ -33,6 +33,7 @@ export class DeviceAuthWorker {
   private readonly statusPollMilliseconds: number;
   private readonly capacity: number;
   private readonly leaseSeconds: number;
+  private draining = false;
 
   constructor(private readonly options: AuthWorkerOptions) {
     this.createClient =
@@ -45,6 +46,7 @@ export class DeviceAuthWorker {
   }
 
   async tick() {
+    if (this.draining) return;
     await this.options.repository.expirePendingAuthAttempts();
     const deletions = await this.options.repository.listTokenDeletionRequests();
     const cleanupResults = await Promise.allSettled(
@@ -80,6 +82,7 @@ export class DeviceAuthWorker {
   }
 
   async drain() {
+    this.draining = true;
     await Promise.allSettled([...this.active.values()]);
   }
 
@@ -109,7 +112,10 @@ export class DeviceAuthWorker {
         .waitForLogin(login.loginId, Math.max(1, Date.parse(attempt.expires_at) - Date.now()))
         .then(() => ({ kind: "connected" as const }))
         .catch((error) => ({ kind: "error" as const, error }));
-      const statusOutcome = this.monitorAttempt(attempt.id, () => monitoring);
+      const statusOutcome = this.monitorAttempt(
+        attempt.id,
+        () => monitoring && !this.draining,
+      );
       const outcome = await Promise.race([loginOutcome, statusOutcome]);
       monitoring = false;
 
@@ -183,9 +189,9 @@ export class DeviceAuthWorker {
     | { kind: "expired" }
     | { kind: "lease_lost" }
   > {
-    while (shouldContinue()) {
+    while (true) {
       await delay(this.statusPollMilliseconds);
-      if (!shouldContinue()) break;
+      if (!shouldContinue()) return { kind: "lease_lost" };
       const renewed = await this.options.repository.renewAuthAttemptLease(
         attemptId,
         this.options.runtimeId,
@@ -196,7 +202,6 @@ export class DeviceAuthWorker {
       if (status === "cancelled") return { kind: "cancelled" };
       if (status === "expired") return { kind: "expired" };
     }
-    return { kind: "lease_lost" };
   }
 }
 

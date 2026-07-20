@@ -72,4 +72,60 @@ describe("RuntimeJobProcessor subscription recovery", () => {
     );
     expect(repository.failJob).not.toHaveBeenCalled();
   });
+
+  it("fails the job even when a connection-status update fails during recovery", async () => {
+    const subscription = {
+      id: "subscription-1",
+      workspace_id: "workspace-1",
+      auth_mode: "codex_subscription",
+      status: "connected",
+      secret_ref: "runtime:subscription-1",
+      expires_at: null,
+    } as const;
+    const repository = {
+      markJobRunning: vi.fn(async () => undefined),
+      getWorkspaceConnections: vi.fn(async () => ({
+        preferredMode: "codex_subscription",
+        connections: [subscription],
+      })),
+      createStep: vi.fn(async () => "step-1"),
+      failStep: vi.fn(async () => undefined),
+      updateConnection: vi.fn(async () => {
+        throw new Error("Connection status write failed.");
+      }),
+      pauseForProviderApproval: vi.fn(async () => undefined),
+      failJob: vi.fn(async () => undefined),
+    };
+    const job = {
+      id: "job-1",
+      workspace_id: "workspace-1",
+      run_id: "diag_test_001",
+      workflow_key: "bottleneck_map",
+      status: "routing",
+      payload: { diagnostic: diagnostic("bottleneck_map") },
+      attempt_count: 1,
+      max_attempts: 3,
+      lease_owner: "runtime-1",
+      lease_expires_at: "2026-07-14T11:00:00.000Z",
+      created_by: "user-1",
+    };
+    const executionError = new CodexAuthenticationError("ChatGPT login was revoked.");
+    const processor = new RuntimeJobProcessor(
+      repository as never,
+      {} as never,
+      8,
+      () => ({
+        call: vi.fn(async () => {
+          throw executionError;
+        }),
+        connection: subscription,
+      }) as never,
+    );
+
+    await expect(processor.process(job)).resolves.toEqual({
+      status: "failed",
+      error: executionError,
+    });
+    expect(repository.failJob).toHaveBeenCalledWith(job, executionError);
+  });
 });
