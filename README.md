@@ -63,7 +63,7 @@ Apply the Supabase migration from `solodot-mvp`, then configure:
 
 ```text
 SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=...
+SUPABASE_SECRET_KEY=... # or legacy SUPABASE_SERVICE_ROLE_KEY
 SOLODOT_RUNTIME_ENCRYPTION_KEY=... # 32 bytes, base64 or hex
 SOLODOT_RUNTIME_TOKEN_DIR=/var/lib/solodot/tokens
 SOLODOT_RUNTIME_CONCURRENCY=8

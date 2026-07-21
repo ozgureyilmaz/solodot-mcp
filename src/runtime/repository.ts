@@ -400,14 +400,28 @@ export class RuntimeRepository {
 }
 
 export function createRuntimeRepositoryFromEnv() {
-  const url = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL)?.trim();
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
-  if (!url || !serviceRoleKey) {
-    throw new Error("Runtime requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.");
-  }
+  const { url, serviceKey } = resolveRuntimeSupabaseConfig(process.env);
   return new RuntimeRepository(
-    createClient(url, serviceRoleKey, {
+    createClient(url, serviceKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     }),
   );
+}
+
+export function resolveRuntimeSupabaseConfig(
+  environment: Record<string, string | undefined>,
+) {
+  const url = (
+    environment.SUPABASE_URL || environment.NEXT_PUBLIC_SUPABASE_URL
+  )?.trim();
+  const serviceKey = (
+    environment.SUPABASE_SECRET_KEY ||
+    environment.SUPABASE_SERVICE_ROLE_KEY
+  )?.trim();
+  if (!url || !serviceKey) {
+    throw new Error(
+      "Runtime requires SUPABASE_URL and SUPABASE_SECRET_KEY (or legacy SUPABASE_SERVICE_ROLE_KEY).",
+    );
+  }
+  return { url, serviceKey };
 }

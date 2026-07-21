@@ -1,5 +1,35 @@
 import { describe, expect, it, vi } from "vitest";
-import { RuntimeRepository } from "../src/runtime/repository";
+import {
+  resolveRuntimeSupabaseConfig,
+  RuntimeRepository,
+} from "../src/runtime/repository";
+
+describe("runtime Supabase configuration", () => {
+  it("prefers the new Supabase secret key over a legacy service-role key", () => {
+    expect(
+      resolveRuntimeSupabaseConfig({
+        SUPABASE_URL: "https://project.supabase.co",
+        SUPABASE_SECRET_KEY: "sb_secret_new",
+        SUPABASE_SERVICE_ROLE_KEY: "legacy-service-role",
+      }),
+    ).toEqual({
+      url: "https://project.supabase.co",
+      serviceKey: "sb_secret_new",
+    });
+  });
+
+  it("keeps the legacy service-role key as a compatibility fallback", () => {
+    expect(
+      resolveRuntimeSupabaseConfig({
+        SUPABASE_URL: "https://project.supabase.co",
+        SUPABASE_SERVICE_ROLE_KEY: "legacy-service-role",
+      }),
+    ).toEqual({
+      url: "https://project.supabase.co",
+      serviceKey: "legacy-service-role",
+    });
+  });
+});
 
 describe("RuntimeRepository leases", () => {
   it("claims bounded jobs through the atomic SKIP LOCKED RPC", async () => {
