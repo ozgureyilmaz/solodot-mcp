@@ -143,10 +143,15 @@ describe("RuntimeRepository leases", () => {
     ).resolves.toBeUndefined();
     expect(from).toHaveBeenCalledWith("solodot_openai_auth_attempts");
     expect(update).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "expired" }),
+      expect.objectContaining({
+        status: "expired",
+        credential_envelope: null,
+        account_label: null,
+      }),
     );
     expect(inStatuses).toHaveBeenCalledWith("status", [
       "queued",
+      "queued_import",
       "starting",
       "pending",
     ]);

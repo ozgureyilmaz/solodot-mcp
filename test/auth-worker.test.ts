@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { generateKeyPairSync } from "node:crypto";
 import { DeviceAuthWorker } from "../src/runtime/authWorker";
+import { encryptCodexCredential } from "../src/runtime/credentialTransfer";
 
 const attempt = {
   id: "attempt-1",
@@ -11,9 +13,110 @@ const attempt = {
   expires_at: "2099-07-20T10:15:00.000Z",
   runtime_id: "runtime-1",
   lease_expires_at: "2099-07-20T10:01:00.000Z",
+  credential_envelope: null,
+  account_label: null,
 };
 
 describe("DeviceAuthWorker official app-server flow", () => {
+  it("imports an end-to-end encrypted companion credential without starting app-server", async () => {
+    const { publicKey, privateKey } = generateKeyPairSync("x25519");
+    const importedAttempt = {
+      ...attempt,
+      credential_envelope: encryptCodexCredential({
+        authJson: '{"tokens":{"access_token":"secret"}}',
+        publicKey: publicKey.export({ type: "spki", format: "pem" }).toString(),
+        attemptId: attempt.id,
+      }),
+      account_label: "member@example.com · plus",
+    };
+    const repository = {
+      expirePendingAuthAttempts: vi.fn(async () => undefined),
+      listTokenDeletionRequests: vi.fn(async () => []),
+      claimAuthAttempts: vi.fn(async () => [importedAttempt]),
+      updateAuthAttempt: vi.fn(async () => undefined),
+      updateConnection: vi.fn(async () => undefined),
+    };
+    const tokenStore = {
+      save: vi.fn(async () => undefined),
+      delete: vi.fn(async () => undefined),
+    };
+    const createClient = vi.fn();
+    const homeManager = { open: vi.fn() };
+    const worker = new DeviceAuthWorker({
+      repository: repository as never,
+      tokenStore: tokenStore as never,
+      homeManager: homeManager as never,
+      runtimeId: "runtime-1",
+      transferPrivateKey: privateKey
+        .export({ type: "pkcs8", format: "pem" })
+        .toString(),
+      createClient,
+    });
+
+    await worker.tick();
+    await worker.drain();
+
+    expect(createClient).not.toHaveBeenCalled();
+    expect(homeManager.open).not.toHaveBeenCalled();
+    expect(tokenStore.save).toHaveBeenCalledWith("connection-1", {
+      authJson: '{"tokens":{"access_token":"secret"}}',
+    });
+    expect(repository.updateConnection).toHaveBeenCalledWith(
+      "connection-1",
+      expect.objectContaining({
+        status: "connected",
+        account_label: "member@example.com · plus",
+      }),
+    );
+    expect(repository.updateAuthAttempt).toHaveBeenCalledWith(
+      "attempt-1",
+      expect.objectContaining({
+        status: "authorized",
+        credential_envelope: null,
+      }),
+    );
+  });
+
+  it("removes an unusable transfer envelope when runtime import fails", async () => {
+    const { publicKey } = generateKeyPairSync("x25519");
+    const importedAttempt = {
+      ...attempt,
+      credential_envelope: encryptCodexCredential({
+        authJson: '{"tokens":{"access_token":"secret"}}',
+        publicKey: publicKey.export({ type: "spki", format: "pem" }).toString(),
+        attemptId: attempt.id,
+      }),
+      account_label: "member@example.com · plus",
+    };
+    const repository = {
+      expirePendingAuthAttempts: vi.fn(async () => undefined),
+      listTokenDeletionRequests: vi.fn(async () => []),
+      claimAuthAttempts: vi.fn(async () => [importedAttempt]),
+      updateAuthAttempt: vi.fn(async () => undefined),
+      updateConnection: vi.fn(async () => undefined),
+      getAuthAttemptStatus: vi.fn(async () => "starting"),
+    };
+    const worker = new DeviceAuthWorker({
+      repository: repository as never,
+      tokenStore: { delete: vi.fn() } as never,
+      homeManager: { open: vi.fn() } as never,
+      runtimeId: "runtime-1",
+      transferPrivateKey: "not-a-private-key",
+    });
+
+    await worker.tick();
+    await worker.drain();
+
+    expect(repository.updateAuthAttempt).toHaveBeenCalledWith(
+      "attempt-1",
+      expect.objectContaining({
+        status: "error",
+        credential_envelope: null,
+        account_label: null,
+      }),
+    );
+  });
+
   it("persists only the encrypted managed cache after ChatGPT login", async () => {
     const repository = {
       expirePendingAuthAttempts: vi.fn(async () => undefined),

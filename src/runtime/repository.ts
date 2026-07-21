@@ -39,6 +39,8 @@ export type PendingAuthAttempt = {
   expires_at: string;
   runtime_id: string;
   lease_expires_at: string;
+  credential_envelope: unknown | null;
+  account_label: string | null;
 };
 
 export type RuntimeTokenDeletion = {
@@ -201,8 +203,13 @@ export class RuntimeRepository {
   async expirePendingAuthAttempts(now = new Date().toISOString()) {
     const { error } = await this.client
       .from("solodot_openai_auth_attempts")
-      .update({ status: "expired", updated_at: now })
-      .in("status", ["queued", "starting", "pending"])
+      .update({
+        status: "expired",
+        credential_envelope: null,
+        account_label: null,
+        updated_at: now,
+      })
+      .in("status", ["queued", "queued_import", "starting", "pending"])
       .lt("expires_at", now);
     if (error) throw error;
   }

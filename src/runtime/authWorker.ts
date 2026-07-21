@@ -3,6 +3,7 @@ import {
   createStdioCodexTransport,
 } from "./codexAppServer";
 import { CodexHomeManager } from "./codexHome";
+import { decryptCodexCredential } from "./credentialTransfer";
 import { RuntimeRepository, type PendingAuthAttempt } from "./repository";
 import { EncryptedTokenStore } from "./tokenStore";
 
@@ -27,6 +28,7 @@ type AuthWorkerOptions = {
   capacity?: number;
   leaseSeconds?: number;
   loginMode?: "device" | "browser";
+  transferPrivateKey?: string;
 };
 
 export class DeviceAuthWorker {
@@ -97,6 +99,10 @@ export class DeviceAuthWorker {
     let closed = false;
     let monitoring = true;
     try {
+      if (attempt.credential_envelope) {
+        await this.importCredential(attempt);
+        return;
+      }
       home = await this.options.homeManager.open(attempt.connection_id);
       client = this.createClient(home.path);
       await client.initialize();
@@ -171,6 +177,9 @@ export class DeviceAuthWorker {
           status: "error",
           runtime_id: null,
           lease_expires_at: null,
+          ...(attempt.credential_envelope
+            ? { credential_envelope: null, account_label: null }
+            : {}),
         });
         await this.options.repository.updateConnection(attempt.connection_id, {
           status: "error",
@@ -187,6 +196,36 @@ export class DeviceAuthWorker {
       if (client && !closed) await client.close().catch(() => undefined);
       if (home && !persisted) await home.discard();
     }
+  }
+
+  private async importCredential(attempt: PendingAuthAttempt) {
+    if (!this.options.transferPrivateKey || !attempt.account_label) {
+      throw new Error("Runtime credential transfer is not configured.");
+    }
+    const authJson = decryptCodexCredential({
+      envelope: attempt.credential_envelope,
+      privateKey: this.options.transferPrivateKey,
+      attemptId: attempt.id,
+    });
+    await this.options.tokenStore.save(attempt.connection_id, { authJson });
+    await this.options.repository.updateConnection(attempt.connection_id, {
+      status: "connected",
+      secret_ref: `runtime:${attempt.connection_id}`,
+      account_label: attempt.account_label,
+      expires_at: null,
+      last_checked_at: new Date().toISOString(),
+      last_error_code: null,
+      last_error_message: null,
+    });
+    await this.options.repository.updateAuthAttempt(attempt.id, {
+      status: "authorized",
+      credential_envelope: null,
+      account_label: null,
+      device_auth_id: null,
+      user_code: null,
+      runtime_id: null,
+      lease_expires_at: null,
+    });
   }
 
   private async monitorAttempt(

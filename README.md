@@ -16,7 +16,7 @@ The default container command starts the runtime and opens no inbound applicatio
 
 - API-key mode uses the official OpenAI Responses API.
 - Codex subscription mode uses OpenAI's official `codex app-server` managed `chatgptDeviceCode` login and structured turn protocol.
-- A trusted local runtime may instead use the official app-server `chatgpt` browser OAuth flow. Its callback is bound to `localhost:1455`, so it cannot be used by a hosted runtime. Solodot starts app-server with a private `CODEX_HOME` and a minimal child environment so it identifies as `solodot` instead of inheriting a parent Codex Desktop/CLI session.
+- The local companion uses the official app-server `chatgpt` browser OAuth flow. Its callback is bound to `localhost:1455`. Solodot starts app-server with a private `CODEX_HOME` and a minimal child environment so it identifies as `solodot` instead of inheriting a parent Codex Desktop/CLI session.
 - Both may coexist per workspace.
 - Subscription exhaustion pauses the job. API-key continuation requires a separate founder approval and is never silent.
 
@@ -65,6 +65,7 @@ Apply the Supabase migration from `solodot-mvp`, then configure:
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SECRET_KEY=... # or legacy SUPABASE_SERVICE_ROLE_KEY
 SOLODOT_RUNTIME_ENCRYPTION_KEY=... # 32 bytes, base64 or hex
+SOLODOT_RUNTIME_TRANSFER_PRIVATE_KEY=... # X25519 PKCS#8 PEM
 SOLODOT_RUNTIME_TOKEN_DIR=/var/lib/solodot/tokens
 SOLODOT_RUNTIME_CONCURRENCY=8
 SOLODOT_MAX_WORKERS=8
@@ -83,7 +84,18 @@ SOLODOT_CODEX_LOGIN_MODE=browser
 SOLODOT_RUNTIME_LOCAL_BROWSER_AUTH=true
 ```
 
-Browser mode creates a separate local credential cache and Solodot originator through the official Codex app-server. The child process receives no parent Codex task identifiers, originator override, OpenAI key, Supabase secret, or other application credentials. Do not enable it in a hosted container: the OpenAI callback returns to the customer's localhost, not the server. Do not distribute `SUPABASE_SERVICE_ROLE_KEY` to customer devices. A production customer-side companion must use a separately scoped pairing credential rather than the current service-role runtime configuration.
+Browser mode creates a separate local credential cache and Solodot originator through the official Codex app-server. The child process receives no parent Codex task identifiers, originator override, OpenAI key, Supabase secret, or other application credentials. Do not enable it in a hosted container: the OpenAI callback returns to the customer's localhost, not the server.
+
+For customer pairing, generate a dedicated X25519 transfer key pair:
+
+```bash
+openssl genpkey -algorithm X25519 -out transfer-private.pem
+openssl pkey -in transfer-private.pem -pubout -out transfer-public.pem
+```
+
+Store the private PEM only as `SOLODOT_RUNTIME_TRANSFER_PRIVATE_KEY` on the hosted runtime. Store the public PEM as `SOLODOT_RUNTIME_TRANSFER_PUBLIC_KEY` on the web app. The browser returns a 15-minute one-use pairing token, which is stored server-side only as a SHA-256 hash. The local companion receives no Supabase key, encrypts `auth.json` directly to the runtime public key, deletes its temporary Codex home, and uploads only the ciphertext.
+
+After installing/building this package, run the exact `solodot-companion` command shown by the web app. The command contains the one-use token and should not be shared or saved.
 
 Run directly:
 

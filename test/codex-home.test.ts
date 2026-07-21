@@ -68,4 +68,24 @@ describe("CodexHomeManager", () => {
     expect(encrypted).not.toContain("refreshed-secret");
     await expect(stat(home.path)).rejects.toMatchObject({ code: "ENOENT" });
   });
+
+  it("exports a new companion cache once and removes the temporary home", async () => {
+    const root = await mkdtemp(join(tmpdir(), "solodot-codex-home-test-"));
+    dirs.push(root);
+    const store = new EncryptedTokenStore({
+      directory: join(root, "encrypted"),
+      encryptionKey: Buffer.alloc(32, 9).toString("base64"),
+    });
+    const manager = new CodexHomeManager(store, join(root, "materialized"));
+    const home = await manager.open("connection-1");
+    await writeFile(join(home.path, "auth.json"), '{"token":"companion-secret"}', {
+      mode: 0o600,
+    });
+
+    await expect(home.exportAndDiscard()).resolves.toEqual({
+      authJson: '{"token":"companion-secret"}',
+    });
+    await expect(stat(home.path)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(store.load("connection-1")).resolves.toBeNull();
+  });
 });

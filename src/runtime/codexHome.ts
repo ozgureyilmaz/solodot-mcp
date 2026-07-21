@@ -66,18 +66,23 @@ export class CodexHomeManager {
       discarded = true;
       await rm(sessionPath, { recursive: true, force: true });
     };
+    const exportAndDiscard = async () => {
+      try {
+        const authJson = await readFile(join(path, "auth.json"), "utf8");
+        JSON.parse(authJson);
+        return { authJson };
+      } finally {
+        await discard();
+      }
+    };
     return {
       path,
       workspacePath,
       discard,
+      exportAndDiscard,
       persistAndDiscard: async () => {
-        try {
-          const authJson = await readFile(join(path, "auth.json"), "utf8");
-          JSON.parse(authJson);
-          await this.tokenStore.save(connectionId, { authJson });
-        } finally {
-          await discard();
-        }
+        const credentials = await exportAndDiscard();
+        await this.tokenStore.save(connectionId, credentials);
       },
     };
   }

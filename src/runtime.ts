@@ -27,6 +27,7 @@ const authWorker = new DeviceAuthWorker({
   homeManager,
   runtimeId,
   loginMode,
+  transferPrivateKey: process.env.SOLODOT_RUNTIME_TRANSFER_PRIVATE_KEY,
 });
 const processor = new RuntimeJobProcessor(repository, homeManager, maxWorkers);
 const active = new Map<string, Promise<unknown>>();
