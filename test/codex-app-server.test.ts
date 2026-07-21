@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CodexAppServerClient,
+  createIsolatedCodexEnvironment,
   type CodexAppServerTransport,
   type CodexRpcMessage,
 } from "../src/runtime/codexAppServer";
@@ -25,6 +26,29 @@ class FakeTransport implements CodexAppServerTransport {
 }
 
 describe("official Codex app-server client", () => {
+  it("does not inherit a parent Codex session or provider credentials", () => {
+    expect(
+      createIsolatedCodexEnvironment(
+        {
+          PATH: "/usr/bin",
+          LANG: "en_US.UTF-8",
+          HTTPS_PROXY: "http://127.0.0.1:9000",
+          CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "Codex Desktop",
+          CODEX_THREAD_ID: "current-thread",
+          CODEX_ACCESS_TOKEN: "current-codex-token",
+          OPENAI_API_KEY: "api-key",
+          SUPABASE_SECRET_KEY: "database-secret",
+        },
+        "/tmp/isolated-solodot-home",
+      ),
+    ).toEqual({
+      PATH: "/usr/bin",
+      LANG: "en_US.UTF-8",
+      HTTPS_PROXY: "http://127.0.0.1:9000",
+      CODEX_HOME: "/tmp/isolated-solodot-home",
+    });
+  });
+
   it("initializes with a Solodot client identity on the stable protocol", async () => {
     const transport = new FakeTransport();
     const client = new CodexAppServerClient(transport);

@@ -308,11 +308,64 @@ export function createStdioCodexTransport({
   codexBinary?: string;
 }): CodexAppServerTransport {
   const child = spawn(codexBinary, ["app-server", "--strict-config"], {
-    env: { ...process.env, CODEX_HOME: codexHome },
+    env: createIsolatedCodexEnvironment(process.env, codexHome),
     stdio: ["pipe", "pipe", "pipe"],
   });
   child.stderr.on("data", (chunk) => process.stderr.write(chunk));
   return new StdioTransport(child);
+}
+
+const CODEX_CHILD_ENVIRONMENT_ALLOWLIST = new Set([
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "SHELL",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  "TZ",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TERM",
+  "COLORTERM",
+  "NO_COLOR",
+  "FORCE_COLOR",
+  "SystemRoot",
+  "WINDIR",
+  "COMSPEC",
+  "PATHEXT",
+  "USERPROFILE",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "ALL_PROXY",
+  "NO_PROXY",
+  "http_proxy",
+  "https_proxy",
+  "all_proxy",
+  "no_proxy",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "NODE_EXTRA_CA_CERTS",
+  "CURL_CA_BUNDLE",
+  "REQUESTS_CA_BUNDLE",
+]);
+
+export function createIsolatedCodexEnvironment(
+  source: Record<string, string | undefined>,
+  codexHome: string,
+) {
+  const environment: Record<string, string> = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (value !== undefined && CODEX_CHILD_ENVIRONMENT_ALLOWLIST.has(key)) {
+      environment[key] = value;
+    }
+  }
+  environment.CODEX_HOME = codexHome;
+  return environment;
 }
 
 class StdioTransport implements CodexAppServerTransport {
