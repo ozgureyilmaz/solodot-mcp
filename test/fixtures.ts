@@ -4,9 +4,9 @@ import type {
   ExecutionAsset,
   WorkflowKey,
 } from "../src/harness/types";
+import { routeExecutionPack } from "../src/runtime/routing";
 
 export const intake: DiagnosticIntake = {
-  provider: "anthropic",
   founderType: "Solo SaaS founder",
   stage: "Prototype before first hire",
   offer: "A focused workflow product",
@@ -24,9 +24,9 @@ export function diagnostic(
 ): DiagnosticResult {
   return {
     runId: "diag_test_001",
-    provider: "anthropic",
     harnessVersion: "diagnostic-harness-v0.2",
     createdAt: "2026-07-10T12:00:00.000Z",
+    routing: routeExecutionPack(workflowKey),
     storage: { status: "not_configured" },
     diagnosis: {
       primaryBottleneck: "No repeatable customer-finding motion",

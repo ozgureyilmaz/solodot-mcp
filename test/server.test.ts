@@ -101,7 +101,6 @@ describe("Solodot MCP lifecycle", () => {
     await repository.saveDiagnostic(
       "founder-a",
       {
-        provider: "anthropic",
         founderType: "Solo founder",
         stage: "Prototype",
         offer: "Tool",

@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "bin": {
-    "solodot-mcp": "./dist/stdio.js"
+    "solodot-mcp": "./dist/stdio.js",
+    "solodot-companion": "./dist/companion.js"
   },
   "exports": {
     ".": "./dist/server.js",
@@ -12,10 +13,14 @@
     "./http": "./dist/http.js"
   },
   "scripts": {
-    "build": "tsup src/server.ts src/stdio.ts src/http.ts --format esm --platform node --target node20 --clean --dts",
+    "build": "tsup src/server.ts src/stdio.ts src/http.ts src/runtime.ts src/companion.ts --format esm --platform node --target node20 --clean --dts",
+    "start:companion": "node dist/companion.js",
+    "start:runtime": "node dist/runtime.js",
     "start:http": "node dist/http.js",
     "dev:stdio": "tsx src/stdio.ts",
     "dev:http": "tsx src/http.ts",
+    "dev:runtime": "tsx src/runtime.ts",
+    "dev:companion": "tsx src/companion.ts",
     "container:build": "./scripts/apple-container.sh build",
     "container:run": "./scripts/apple-container.sh run",
     "container:health": "./scripts/apple-container.sh health",
@@ -27,6 +32,9 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@openai/codex": "0.144.4",
+    "@supabase/supabase-js": "^2.110.3",
+    "openai": "^6.46.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

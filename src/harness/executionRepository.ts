@@ -116,7 +116,7 @@ export class SupabaseExecutionRepository implements ExecutionRepository {
   constructor() {
     if (!getRunPersistenceConfig()) {
       throw new Error(
-        "Supabase execution repository requires SUPABASE_URL and SUPABASE_SECRET_KEY.",
+        "Supabase execution repository requires service credentials plus SOLODOT_MCP_WORKSPACE_ID and SOLODOT_MCP_USER_ID.",
       );
     }
   }
@@ -129,7 +129,6 @@ export class SupabaseExecutionRepository implements ExecutionRepository {
     const outcome = await tryPersistDiagnosticRun({
       intake,
       result: diagnostic,
-      ownerToken: principal,
     });
     if (outcome.status !== "stored") {
       throw new Error(outcome.message || "Diagnostic run could not be stored.");
@@ -140,11 +139,10 @@ export class SupabaseExecutionRepository implements ExecutionRepository {
     try {
       const snapshot = await getPersistedRunSnapshot({
         runId,
-        ownerToken: principal,
       });
       const run = snapshot.run;
       const diagnostic = run.diagnostic_result as DiagnosticResult;
-      const intakeBrief = run.intake_brief as Omit<DiagnosticIntake, "provider">;
+      const intakeBrief = run.intake_brief as DiagnosticIntake;
       const assets = snapshot.artifacts
         .map((artifact) => artifact.payload)
         .filter(isExecutionAsset);
@@ -156,7 +154,7 @@ export class SupabaseExecutionRepository implements ExecutionRepository {
       }));
 
       return {
-        intake: { ...intakeBrief, provider: diagnostic.provider },
+        intake: intakeBrief,
         diagnostic,
         assets: applyStoredStatuses(assets, snapshot.actions),
         approvals,
@@ -170,7 +168,7 @@ export class SupabaseExecutionRepository implements ExecutionRepository {
   }
 
   async saveAsset(principal: string, asset: ExecutionAsset) {
-    await persistExecutionAsset({ asset, ownerToken: principal });
+    await persistExecutionAsset({ asset });
   }
 
   async reviewAsset(
@@ -183,7 +181,6 @@ export class SupabaseExecutionRepository implements ExecutionRepository {
     await recordApproval({
       runId,
       actionId: assetId,
-      ownerToken: principal,
       decision,
       reason,
     });

@@ -1,0 +1,26 @@
+services:
+  runtime:
+    build: .
+    image: solodot-runtime:local
+    restart: unless-stopped
+    init: true
+    env_file:
+      - ${SOLODOT_ENV_FILE:-.env}
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    volumes:
+      - solodot-runtime-data:/var/lib/solodot
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD-SHELL", "test -r /proc/1/cmdline && grep -aq 'runtime.js' /proc/1/cmdline"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  solodot-runtime-data:

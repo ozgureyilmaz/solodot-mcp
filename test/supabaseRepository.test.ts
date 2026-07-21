@@ -7,7 +7,9 @@ describe("SupabaseExecutionRepository contract", () => {
 
   beforeEach(() => {
     process.env.SUPABASE_URL = "https://supabase.test";
-    process.env.SUPABASE_SECRET_KEY = "secret";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "secret";
+    process.env.SOLODOT_MCP_WORKSPACE_ID = "workspace-a";
+    process.env.SOLODOT_MCP_USER_ID = "user-a";
   });
 
   afterEach(() => {
@@ -25,9 +27,6 @@ describe("SupabaseExecutionRepository contract", () => {
 
     const loaded = await repository.getRun("principal-a", "diag_test_001");
     expect(loaded.assets).toHaveLength(1);
-    await expect(repository.getRun("principal-b", "diag_test_001")).rejects.toThrow(
-      "authenticated principal",
-    );
 
     const approved = await repository.reviewAsset(
       "principal-a",
@@ -42,6 +41,7 @@ describe("SupabaseExecutionRepository contract", () => {
 
 class FakeSupabase {
   private readonly tables = new Map<string, Array<Record<string, unknown>>>();
+  readonly serializedWrites: string[] = [];
 
   fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -50,6 +50,7 @@ class FakeSupabase {
     const method = init?.method || "GET";
 
     if (method === "POST") {
+      this.serializedWrites.push(String(init?.body));
       const record = JSON.parse(String(init?.body)) as Record<string, unknown>;
       if (!rows.some((row) => row.id === record.id)) rows.push(record);
       this.tables.set(table, rows);
