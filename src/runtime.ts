@@ -5,6 +5,7 @@ import { CodexHomeManager } from "./runtime/codexHome";
 import { RuntimeJobProcessor } from "./runtime/processor";
 import { createRuntimeRepositoryFromEnv, type RuntimeJob } from "./runtime/repository";
 import { EncryptedTokenStore } from "./runtime/tokenStore";
+import { resolveCodexLoginMode } from "./runtime/loginMode";
 
 const version = process.env.npm_package_version || "0.1.0";
 const runtimeId = process.env.SOLODOT_RUNTIME_ID || `runtime-${randomUUID()}`;
@@ -15,6 +16,7 @@ const pollMilliseconds = boundedInteger(process.env.SOLODOT_JOB_POLL_MS, 2000, 5
 const tokenDirectory = process.env.SOLODOT_RUNTIME_TOKEN_DIR || "/var/lib/solodot/tokens";
 const encryptionKey = process.env.SOLODOT_RUNTIME_ENCRYPTION_KEY;
 if (!encryptionKey) throw new Error("SOLODOT_RUNTIME_ENCRYPTION_KEY is required.");
+const loginMode = resolveCodexLoginMode(process.env);
 
 const repository = createRuntimeRepositoryFromEnv();
 const tokenStore = new EncryptedTokenStore({ directory: tokenDirectory, encryptionKey });
@@ -24,6 +26,7 @@ const authWorker = new DeviceAuthWorker({
   tokenStore,
   homeManager,
   runtimeId,
+  loginMode,
 });
 const processor = new RuntimeJobProcessor(repository, homeManager, maxWorkers);
 const active = new Map<string, Promise<unknown>>();

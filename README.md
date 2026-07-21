@@ -16,6 +16,7 @@ The default container command starts the runtime and opens no inbound applicatio
 
 - API-key mode uses the official OpenAI Responses API.
 - Codex subscription mode uses OpenAI's official `codex app-server` managed `chatgptDeviceCode` login and structured turn protocol.
+- A trusted local runtime may instead use the official app-server `chatgpt` browser OAuth flow. Its callback is bound to `localhost:1455`, so it cannot be used by a hosted runtime.
 - Both may coexist per workspace.
 - Subscription exhaustion pauses the job. API-key continuation requires a separate founder approval and is never silent.
 
@@ -70,7 +71,19 @@ SOLODOT_MAX_WORKERS=8
 CODEX_BINARY=/app/node_modules/.bin/codex
 # Optional. Empty uses the subscription account's default Codex model.
 CODEX_SUBSCRIPTION_MODEL=
+# Default for hosted runtimes.
+SOLODOT_CODEX_LOGIN_MODE=device
+SOLODOT_RUNTIME_LOCAL_BROWSER_AUTH=false
 ```
+
+For an operator-only local preview on the same computer as the browser:
+
+```text
+SOLODOT_CODEX_LOGIN_MODE=browser
+SOLODOT_RUNTIME_LOCAL_BROWSER_AUTH=true
+```
+
+Browser mode creates a separate managed OAuth login through the official Codex app-server. Do not enable it in a hosted container: the OpenAI callback returns to the customer's localhost, not the server. Do not distribute `SUPABASE_SERVICE_ROLE_KEY` to customer devices. A production customer-side companion must use a separately scoped pairing credential rather than the current service-role runtime configuration.
 
 Run directly:
 

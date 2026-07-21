@@ -74,6 +74,29 @@ describe("official Codex app-server client", () => {
     });
   });
 
+  it("starts the managed ChatGPT browser flow for a local runtime", async () => {
+    const transport = new FakeTransport();
+    const client = new CodexAppServerClient(transport);
+    const pending = client.startChatGPTBrowserLogin();
+    expect(transport.sent[0]).toEqual({
+      method: "account/login/start",
+      id: 1,
+      params: { type: "chatgpt", useHostedLoginSuccessPage: true },
+    });
+    transport.emit({
+      id: 1,
+      result: {
+        type: "chatgpt",
+        loginId: "login-1",
+        authUrl: "https://auth.openai.com/oauth/authorize?redirect_uri=http://localhost:1455/auth/callback",
+      },
+    });
+    await expect(pending).resolves.toEqual({
+      loginId: "login-1",
+      authUrl: "https://auth.openai.com/oauth/authorize?redirect_uri=http://localhost:1455/auth/callback",
+    });
+  });
+
   it("waits for the matching managed-login completion notification", async () => {
     const transport = new FakeTransport();
     const client = new CodexAppServerClient(transport);

@@ -84,6 +84,61 @@ describe("DeviceAuthWorker official app-server flow", () => {
     );
   });
 
+  it("uses browser OAuth only when the runtime explicitly selects local browser mode", async () => {
+    const repository = {
+      expirePendingAuthAttempts: vi.fn(async () => undefined),
+      listTokenDeletionRequests: vi.fn(async () => []),
+      claimAuthAttempts: vi.fn(async () => [attempt]),
+      updateAuthAttempt: vi.fn(async () => undefined),
+      updateConnection: vi.fn(async () => undefined),
+      renewAuthAttemptLease: vi.fn(async () => true),
+      getAuthAttemptStatus: vi.fn(async () => "pending"),
+    };
+    const home = {
+      path: "/tmp/codex-home",
+      persistAndDiscard: vi.fn(async () => undefined),
+      discard: vi.fn(async () => undefined),
+    };
+    const client = {
+      initialize: vi.fn(async () => undefined),
+      startChatGPTDeviceLogin: vi.fn(),
+      startChatGPTBrowserLogin: vi.fn(async () => ({
+        loginId: "login-browser-1",
+        authUrl: "https://auth.openai.com/oauth/authorize",
+      })),
+      waitForLogin: vi.fn(async () => undefined),
+      readAccount: vi.fn(async () => ({
+        account: { type: "chatgpt", email: "user@example.com", planType: "plus" },
+      })),
+      cancelLogin: vi.fn(async () => undefined),
+      close: vi.fn(async () => undefined),
+    };
+    const worker = new DeviceAuthWorker({
+      repository: repository as never,
+      tokenStore: { delete: vi.fn() } as never,
+      homeManager: { open: vi.fn(async () => home) } as never,
+      runtimeId: "runtime-1",
+      loginMode: "browser",
+      createClient: () => client as never,
+      statusPollMilliseconds: 1,
+    });
+
+    await worker.tick();
+    await worker.drain();
+
+    expect(client.startChatGPTBrowserLogin).toHaveBeenCalledOnce();
+    expect(client.startChatGPTDeviceLogin).not.toHaveBeenCalled();
+    expect(repository.updateAuthAttempt).toHaveBeenCalledWith(
+      "attempt-1",
+      expect.objectContaining({
+        status: "pending",
+        device_auth_id: "login-browser-1",
+        user_code: null,
+        verification_uri: "https://auth.openai.com/oauth/authorize",
+      }),
+    );
+  });
+
   it("cancels app-server login when the owning user cancels the attempt", async () => {
     let completeLogin: (() => void) | undefined;
     const repository = {

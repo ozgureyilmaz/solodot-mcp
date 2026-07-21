@@ -95,6 +95,24 @@ export class CodexAppServerClient {
     };
   }
 
+  async startChatGPTBrowserLogin() {
+    const result = await this.request("account/login/start", {
+      type: "chatgpt",
+      useHostedLoginSuccessPage: true,
+    });
+    if (
+      result.type !== "chatgpt" ||
+      typeof result.loginId !== "string" ||
+      typeof result.authUrl !== "string"
+    ) {
+      throw new Error("Codex app-server returned an invalid browser login response.");
+    }
+    return {
+      loginId: result.loginId,
+      authUrl: result.authUrl,
+    };
+  }
+
   async waitForLogin(loginId: string, timeoutMilliseconds = 15 * 60 * 1000) {
     const params = await this.waitForNotification(
       "account/login/completed",

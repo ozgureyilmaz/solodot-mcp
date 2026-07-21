@@ -10,6 +10,7 @@ type AuthClient = Pick<
   CodexAppServerClient,
   | "initialize"
   | "startChatGPTDeviceLogin"
+  | "startChatGPTBrowserLogin"
   | "waitForLogin"
   | "readAccount"
   | "cancelLogin"
@@ -25,6 +26,7 @@ type AuthWorkerOptions = {
   statusPollMilliseconds?: number;
   capacity?: number;
   leaseSeconds?: number;
+  loginMode?: "device" | "browser";
 };
 
 export class DeviceAuthWorker {
@@ -33,6 +35,7 @@ export class DeviceAuthWorker {
   private readonly statusPollMilliseconds: number;
   private readonly capacity: number;
   private readonly leaseSeconds: number;
+  private readonly loginMode: "device" | "browser";
   private draining = false;
 
   constructor(private readonly options: AuthWorkerOptions) {
@@ -43,6 +46,7 @@ export class DeviceAuthWorker {
     this.statusPollMilliseconds = options.statusPollMilliseconds || 2_000;
     this.capacity = options.capacity || 4;
     this.leaseSeconds = options.leaseSeconds || 60;
+    this.loginMode = options.loginMode || "device";
   }
 
   async tick() {
@@ -96,12 +100,16 @@ export class DeviceAuthWorker {
       home = await this.options.homeManager.open(attempt.connection_id);
       client = this.createClient(home.path);
       await client.initialize();
-      const login = await client.startChatGPTDeviceLogin();
+      const login =
+        this.loginMode === "browser"
+          ? await client.startChatGPTBrowserLogin()
+          : await client.startChatGPTDeviceLogin();
       await this.options.repository.updateAuthAttempt(attempt.id, {
         status: "pending",
         device_auth_id: login.loginId,
-        user_code: login.userCode,
-        verification_uri: login.verificationUrl,
+        user_code: "userCode" in login ? login.userCode : null,
+        verification_uri:
+          "verificationUrl" in login ? login.verificationUrl : login.authUrl,
         poll_interval_seconds: Math.max(1, Math.ceil(this.statusPollMilliseconds / 1_000)),
         lease_expires_at: new Date(
           Date.now() + this.leaseSeconds * 1_000,
